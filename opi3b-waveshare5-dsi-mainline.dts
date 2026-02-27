@@ -1,0 +1,154 @@
+// SPDX-License-Identifier: GPL-2.0+
+/*
+ * Armbian overlay: Raspberry Pi 7" touchscreen (Waveshare 5" DSI clone)
+ * for Orange Pi 3B — mainline kernel (6.11+)
+ *
+ * Based on:
+ *   - OrangePi BSP overlay: rk356x-raspi-7inch-touchscreen.dts
+ *   - Anbernic RG503 mainline DTS (working rk3566 DSI0 reference)
+ *   - PineTab2 mainline DTS (working rk3566 DSI0 reference)
+ *
+ * BSP→Mainline mapping:
+ *   video_phy1        → dsi_dphy1      (@ fe860000)
+ *   dsi1_in_vp0       → vp1 with ROCKCHIP_VOP2_EP_MIPI1
+ *   raspits_panel     → panel node inside &dsi1
+ *   raspits_ft5426    → focaltech,ft5426 in &i2c1
+ *   compatible "raspits_ft5426" → "focaltech,ft5426"
+ *
+ * Hardware:
+ *   - DSI connector: DSI1 (fe070000) — 4-lane MIPI
+ *   - Panel i2c addr: 0x45 (raspberrypi panel bridge)
+ *   - Touch i2c:  ft5426 @ 0x38 on i2c1
+ *   - VOP routing: vp1 → DSI1 → panel
+ *
+ * Usage (Armbian armbian-add-overlay):
+ *   sudo armbian-add-overlay opi3b-waveshare5-dsi-mainline.dts
+ *
+ * Or manually:
+ *   dtc -I dts -O dtb -o /boot/overlay-user/opi3b-waveshare5-dsi-mainline.dtbo \
+ *       opi3b-waveshare5-dsi-mainline.dts
+ *   # Add to /boot/armbianEnv.txt:
+ *   #   user_overlays=opi3b-waveshare5-dsi-mainline
+ */
+
+/dts-v1/;
+/plugin/;
+
+#include <dt-bindings/gpio/gpio.h>
+#include <dt-bindings/pinctrl/rockchip.h>
+
+/ {
+	compatible = "rockchip,rk3566-orangepi-3b", "rockchip,rk3566";
+
+	/* Enable DSI1 MIPI PHY */
+	fragment@0 {
+		target = <&dsi_dphy1>;
+		__overlay__ {
+			status = "okay";
+		};
+	};
+
+	/* Enable DSI1 controller + panel node */
+	fragment@1 {
+		target = <&dsi1>;
+		__overlay__ {
+			status = "okay";
+			#address-cells = <1>;
+			#size-cells = <0>;
+
+			panel@0 {
+				compatible = "raspberrypi,7inch-touchscreen-panel";
+				reg = <0>;
+
+				port {
+					panel_in_dsi1: endpoint {
+						remote-endpoint = <&dsi1_out_panel>;
+					};
+				};
+			};
+		};
+	};
+
+	/* Wire DSI1 output port → panel */
+	fragment@2 {
+		target = <&dsi1>;
+		__overlay__ {
+			ports {
+				port@1 {
+					reg = <1>;
+					dsi1_out_panel: endpoint {
+						remote-endpoint = <&panel_in_dsi1>;
+					};
+				};
+			};
+		};
+	};
+
+	/* Route VOP video port 1 → DSI1 */
+	fragment@3 {
+		target = <&vp1>;
+		__overlay__ {
+			vp1_out_dsi1: endpoint@ROCKCHIP_VOP2_EP_MIPI1 {
+				reg = <ROCKCHIP_VOP2_EP_MIPI1>;
+				remote-endpoint = <&dsi1_in_vp1>;
+			};
+		};
+	};
+
+	/* Wire DSI1 input port ← vp1 */
+	fragment@4 {
+		target = <&dsi1>;
+		__overlay__ {
+			ports {
+				port@0 {
+					reg = <0>;
+					dsi1_in_vp1: endpoint {
+						remote-endpoint = <&vp1_out_dsi1>;
+					};
+				};
+			};
+		};
+	};
+
+	/* Enable VOP so it starts up */
+	fragment@5 {
+		target = <&vop>;
+		__overlay__ {
+			status = "okay";
+		};
+	};
+
+	/* ft5426 capacitive touch on i2c1 (0x38) */
+	fragment@6 {
+		target = <&i2c1>;
+		__overlay__ {
+			status = "okay";
+			#address-cells = <1>;
+			#size-cells = <0>;
+
+			ft5426_ts: touchscreen@38 {
+				compatible = "focaltech,ft5426", "focaltech,ft5x06";
+				reg = <0x38>;
+				interrupt-parent = <&gpio4>;
+				/*
+				 * INT pin: check OPi 3B schematic for DSI connector
+				 * Waveshare 5" typically: GPIO4_B1 or similar
+				 * Set to 0 if unknown — driver will poll instead
+				 */
+				/* interrupts = <RK_PB1 IRQ_TYPE_EDGE_FALLING>; */
+				touchscreen-size-x = <800>;
+				touchscreen-size-y = <480>;
+				status = "okay";
+			};
+		};
+	};
+
+	/* Disable HDMI to avoid VOP conflict (vp0 goes to HDMI, vp1 to DSI) */
+	/* Comment this out if you want HDMI + DSI simultaneously */
+	fragment@7 {
+		target = <&hdmi>;
+		__overlay__ {
+			status = "disabled";
+		};
+	};
+};

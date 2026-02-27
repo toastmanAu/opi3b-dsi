@@ -1,0 +1,13 @@
+# /boot/armbianEnv.txt additions for OPi 3B kiosk
+# Merge these into the existing armbianEnv.txt after first boot
+# OR the firstboot.sh script does it automatically
+
+# 256MB contiguous memory for panfrost GPU + DRM framebuffer
+# Without this panfrost may fail to allocate at boot
+extraargs=cma=256M
+
+# DSI overlay (Waveshare 5" / RPi 7" clone on DSI1)
+user_overlays=opi3b-waveshare5-dsi-mainline
+
+# Reduce kernel log noise in production (set to 7 for debugging)
+# verbosity=4
